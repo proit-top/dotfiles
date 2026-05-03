@@ -1,0 +1,17 @@
+[window]
+dimensions = { columns = 210, lines = 45 }
+padding = { x = 20, y = 20 }
+opacity = 0.95
+blur = true
+
+[font]
+normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
+size = 11.0
+
+[terminal.shell]
+program = "wsl.exe"
+args = ["--cd", "~"] # Запускать сразу в домашней папке Linux
+
+[colors.primary]
+background = "#1a1b26" # Приятный темный цвет (Tokyo Night)
+foreground = "#a9b1d6"

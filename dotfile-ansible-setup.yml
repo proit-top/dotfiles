@@ -1,0 +1,177 @@
+---
+- hosts: localhost
+  vars:
+    # Имя твоего пользователя в Windows для путей /mnt/c/
+    win_user: "Nick"
+
+  tasks:
+    - name: Установка системных пакетов (Fish, Tmux, FZF)
+      become: true
+      apt:
+        name: [fish, tmux, fzf, curl, git]
+        state: present
+
+    - name: Установка Starship (красивый промпт)
+      shell: curl -sS https://starship.rs/install.sh | sh -s -- -y
+      args:
+        creates: /usr/local/bin/starship
+
+    - name: Установка зависимостей для скачивания
+      become: true
+      apt:
+        name: [unzip, wget]
+        state: present
+
+    - name: Установка zoxide (быстрая навигация)
+      become: true
+      apt:
+        name: zoxide
+        state: present
+
+    - name: Установка SSHFS (если еще нет)
+      become: true
+      apt:
+        name: sshfs
+        state: present
+
+    - name: Скачивание стабильного Neovim (AppImage)
+      get_url:
+        url: https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.appimage
+        dest: /usr/local/bin/nvim
+        mode: "0755"
+      become: true
+
+    - name: Установка зависимости для AppImage (libfuse2)
+      become: true
+      apt:
+        name: libfuse2
+        state: present
+
+    - name: Клонирование NvChad
+      git:
+        repo: "https://github.com/NvChad/starter"
+        dest: "{{ ansible_env.HOME }}/dotfiles/nvim"
+        depth: 1
+      # Клонируем только если папка пуста
+      when: not (query('fileglob', ansible_env.HOME + '/dotfiles/nvim/init.lua'))
+
+    - name: Гарантируем наличие папки для Neovim в dotfiles
+      file:
+        path: "~/dotfiles/nvim"
+        state: directory
+
+    - name: Привязываем конфиг Neovim (Symlink)
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/nvim"
+        dest: "{{ ansible_env.HOME }}/.config/nvim"
+        state: link
+        force: yes
+
+    - name: Создаем базовую папку для монтирования
+      file:
+        path: "~/remote_server"
+        state: directory
+
+    - name: Клонирование Tmux Plugin Manager (TPM)
+      git:
+        repo: "https://github.com/tmux-plugins/tpm"
+        dest: "~/.tmux/plugins/tpm"
+        depth: 1
+
+    - name: Автоматическая установка плагинов Tmux
+      shell: "~/.tmux/plugins/tpm/bin/install_plugins"
+      # Запускаем только если tmux.conf обновился или если плагины еще не установлены
+      register: tmux_plugins_install
+      changed_when: "'Installing' in tmux_plugins_install.stdout"
+
+    - name: Гарантируем наличие папки ~/.config/fish
+      file:
+        path: "~/.config/fish"
+        state: directory
+
+    - name: Привязываем конфиг Fish (Symlink)
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/config.fish"
+        dest: "{{ ansible_env.HOME }}/.config/fish/config.fish"
+        state: link
+        force: yes
+
+    - name: Привязываем конфиг Tmux (Symlink)
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/tmux.conf"
+        dest: "{{ ansible_env.HOME }}/.tmux.conf"
+        state: link
+        force: yes
+
+    - name: Скачивание и установка npiperelay в Windows
+      block:
+        - name: Создаем папку для бинарников в Windows
+          file:
+            path: "/mnt/c/Users/{{ win_user }}/bin"
+            state: directory
+
+        - name: Создаем временную папку для скачивания в Linux
+          tempfile:
+            state: directory
+          register: temp_bin
+
+        - name: Скачиваем архив npiperelay
+          get_url:
+            url: https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip
+            dest: "{{ temp_bin.path }}/npiperelay.zip"
+
+        - name: Распаковываем npiperelay
+          unarchive:
+            src: "{{ temp_bin.path }}/npiperelay.zip"
+            dest: "{{ temp_bin.path }}"
+            remote_src: yes
+
+        - name: Копируем npiperelay.exe в пользовательскую папку Windows
+          copy:
+            src: "{{ temp_bin.path }}/npiperelay.exe"
+            dest: "/mnt/c/Users/{{ win_user }}/bin/npiperelay.exe"
+            mode: "0755"
+      # Проверяем наличие файла в новом месте
+      when: not (query('fileglob', '/mnt/c/Users/' + win_user + '/bin/npiperelay.exe'))
+
+    - name: Гарантируем наличие папки для конфига в Windows
+      file:
+        path: "/mnt/c/Users/{{ win_user }}/AppData/Roaming/alacritty"
+        state: directory
+
+    - name: Копируем конфиг Alacritty (Синхронизация через копирование)
+      copy:
+        src: "~/dotfiles/alacritty.toml"
+        dest: "/mnt/c/Users/{{ win_user }}/AppData/Roaming/alacritty/alacritty.toml"
+        force: yes
+
+    - name: Привязываем ssh_config из dotfiles к системе
+      file:
+        src: "~/dotfiles/ssh_config"
+        dest: "~/.ssh/config"
+        state: link
+        force: yes
+
+    - name: Установка Fisher (менеджер плагинов Fish)
+      shell: |
+        curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
+      args:
+        executable: /usr/bin/fish
+        creates: ~/.config/fish/functions/fisher.fish
+
+    - name: Установка плагинов через Fisher
+      shell: fish -c "fisher install PatrickF1/fzf.fish"
+      args:
+        creates: ~/.config/fish/functions/fzf_configure_bindings.fish
+
+    - name: Делаем Fish оболочкой по умолчанию
+      become: true
+      user:
+        name: "{{ ansible_user_id }}"
+        shell: /usr/bin/fish
+
+    - name: Установка socat для связи с KeePassXC
+      become: true
+      apt:
+        name: socat
+        state: present

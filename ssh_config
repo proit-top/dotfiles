@@ -1,0 +1,12 @@
+Include /home/nick/dotfiles/ssh_config_local
+
+#tsl
+Host pbx-serbia
+	HostName 100.99.68.111
+	User root
+
+Host pbx-uz
+	Hostname 100.83.252.26
+	User root
+
+

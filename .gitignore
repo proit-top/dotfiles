@@ -1,0 +1,7 @@
+*.retry
+
+*.log
+
+.DS_Store
+
+ssh_config_local
