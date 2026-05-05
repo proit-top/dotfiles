@@ -10,6 +10,8 @@ if status is-interactive
     exec tmux new-session -A -s main
 end
 
+set -gx LS_COLORS "ow=01;34:tw=01;34:st=01;34"
+
 
 # Настройка SSH Agent моста для KeePassXC
 set -gx SSH_AUTH_SOCK "$HOME/.ssh/agent.sock"
@@ -32,42 +34,39 @@ end
 
 
 function scopy
-     # 1. Выбор ключа
-     set -l key_line (ssh-add -L | fzf --height 40% --reverse --border --header="1. Выберите КЛЮЧ:")
-     if test -z "$key_line"; echo "Отмена: Ключ не выбран"; return; end
+    # 1. Выбор ключа
+    set -l key_line (ssh-add -L | fzf --height 40% --reverse --border --header="1. Выберите КЛЮЧ:")
+    if test -z "$key_line"; echo "Отмена: Ключ не выбран"; return; end
 
-     # 2. Выбор сервера или ручной ввод
-     set -l servers (grep -i '^Host ' ~/dotfiles/ssh_config ~/dotfiles/ssh_config_local 2>/dev/null | awk '{print $NF}' | grep -v '*' | sort -u)
-     set -l target (begin; echo "--- ВВЕСТИ ВРУЧНУЮ ---"; printf '%s\n' $servers; end | fzf --height 40% --reverse --border --header="2. Выберите СЕРВЕР:")
+    # 2. Выбор сервера или ручной ввод
+    set -l servers (grep -i '^Host ' ~/dotfiles/ssh_config ~/dotfiles/ssh_config_local 2>/dev/null | awk '{print $NF}' | grep -v '*' | sort -u)
+    set -l target (begin; echo "--- ВВЕСТИ ВРУЧНУЮ ---"; printf '%s\n' $servers; end | fzf --height 40% --reverse --border --header="2. Выберите СЕРВЕР:")
 
-     if test -z "$target" -o "$target" = ""; echo "Отмена: Цель не выбрана"; return; end
+    if test -z "$target" -o "$target" = ""; echo "Отмена: Цель не выбрана"; return; end
 
-     if test "$target" = "--- ВВЕСТИ ВРУЧНУЮ ---"
-         read -p "echo 'Введите user@host: '" target
-         if test -z "$target"; return; end
-     end
+    if test "$target" = "--- ВВЕСТИ ВРУЧНУЮ ---"
+        read -p "echo 'Введите user@host: '" target
+        if test -z "$target"; return; end
+    end
 
-     # 3. Проверка доступности порта 22 (таймаут 2 секунды)
-     echo "Проверка доступности $target..."
-     if not nc -z -w 2 (ssh -G $target | grep '^hostname ' | awk '{print $2}') 22 2>/dev/null
-         # Если nc не нашел хост напрямую (например, это алиас), пробуем просто ssh
-         if not timeout 3s ssh -o ConnectTimeout=2 -o BatchMode=yes $target "true" 2>/dev/null
-             echo "Ошибка: Сервер $target недоступен или SSH закрыт."
-             return
-         end
-     end
+    # 3. Подготовка ключа во временном файле
+    set -l tmp_key (mktemp).pub
+    echo "$key_line" > $tmp_key
 
-     # 4. Копирование ключа (используем временный файл вместо psub для надежности)
-     set -l tmp_key (mktemp).pub
-     echo "$key_line" > $tmp_key
+    echo "Попытка копирования ключа на $target..."
 
-     if ssh-copy-id -F ~/dotfiles/ssh_config -i $tmp_key $target
-         echo "Успех: Ключ скопирован на $target"
-     else
-         echo "Ошибка при копировании ключа."
-     end
 
-     rm -f $tmp_key
+    # 4. Копирование ключа
+    # Используем -F для подхвата всех конфигов, включая кастомные порты
+    if ssh-copy-id -F ~/dotfiles/ssh_config -i $tmp_key $target
+        echo "Успех: Ключ скопирован на $target"
+    else
+        echo "Ошибка: Не удалось скопировать ключ. Проверьте доступность SSH вручную."
+    end
+
+    # Удаляем временный файл
+
+    rm -f $tmp_key
 end
 
 function smount
