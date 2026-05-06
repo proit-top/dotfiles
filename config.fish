@@ -1,14 +1,24 @@
 starship init fish | source
 
-# Инициализация zoxide (команда z)
-zoxide init fish | source
-
 # Проверка: если мы в интерактивном режиме и НЕ внутри tmux
 if status is-interactive
     and not set -q TMUX
     # Пытаемся подключиться к сессии 'main', если её нет — создаем
     exec tmux new-session -A -s main
 end
+
+# Инициализация zoxide (команда z)
+zoxide init fish | source
+
+# Create aliases
+alias cls="clear"
+alias g="git"
+alias n="nvim"
+alias lsa="ls -la"
+#alias m="micro"
+#alias cat="bat"
+#alias feh=="feh --scale-down"
+#alias rm="rmt"
 
 set -gx LS_COLORS "ow=01;34:tw=01;34:st=01;34"
 
