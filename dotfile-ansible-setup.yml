@@ -5,34 +5,47 @@
     win_user: "Nick"
 
   tasks:
-    - name: Установка системных пакетов (Fish, Tmux, FZF)
+    - name: Установка системных пакетов
       become: true
       apt:
-        name: [fish, tmux, fzf, curl, git]
+        name:
+          [
+            fish,
+            tmux,
+            fzf,
+            curl,
+            git,
+            ripgrep,
+            fd-find,
+            unzip,
+            wget,
+            zoxide,
+            sshfs,
+            libfuse2,
+            socat,
+            nodejs,
+            npm,
+          ]
         state: present
+        update_cache: yes
+
+    - name: Установка markdownlint-cli2 через NPM
+      become: true
+      npm:
+        name: markdownlint-cli2
+        global: yes
+
+    - name: Создаем алиас для fd (чтобы LazyVim его нашел)
+      become: true
+      file:
+        src: /usr/bin/fdfind
+        dest: /usr/local/bin/fd
+        state: link
 
     - name: Установка Starship (красивый промпт)
       shell: curl -sS https://starship.rs/install.sh | sh -s -- -y
       args:
         creates: /usr/local/bin/starship
-
-    - name: Установка зависимостей для скачивания
-      become: true
-      apt:
-        name: [unzip, wget]
-        state: present
-
-    - name: Установка zoxide (быстрая навигация)
-      become: true
-      apt:
-        name: zoxide
-        state: present
-
-    - name: Установка SSHFS (если еще нет)
-      become: true
-      apt:
-        name: sshfs
-        state: present
 
     - name: Скачивание стабильного Neovim (AppImage)
       get_url:
@@ -41,24 +54,11 @@
         mode: "0755"
       become: true
 
-    - name: Установка зависимости для AppImage (libfuse2)
-      become: true
-      apt:
-        name: libfuse2
-        state: present
-
-    - name: Клонирование NvChad
+    - name: Клонирование LazyVim Starter
       git:
-        repo: "https://github.com/NvChad/starter"
+        repo: "https://github.com/LazyVim/starter"
         dest: "{{ ansible_env.HOME }}/dotfiles/nvim"
         depth: 1
-      # Клонируем только если папка пуста
-      when: not (query('fileglob', ansible_env.HOME + '/dotfiles/nvim/init.lua'))
-
-    - name: Гарантируем наличие папки для Neovim в dotfiles
-      file:
-        path: "~/dotfiles/nvim"
-        state: directory
 
     - name: Привязываем конфиг Neovim (Symlink)
       file:
@@ -169,9 +169,3 @@
       user:
         name: "{{ ansible_user_id }}"
         shell: /usr/bin/fish
-
-    - name: Установка socat для связи с KeePassXC
-      become: true
-      apt:
-        name: socat
-        state: present
