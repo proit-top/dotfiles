@@ -20,7 +20,7 @@ zoxide init fish | source
 
 # Create aliases
 
-alias cls="clear"
+alias cls="tput cup 0 0"
 alias g="git"
 alias lg='lazygit'
 alias n="nvim"
