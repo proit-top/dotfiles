@@ -51,6 +51,19 @@
         name: superfile
         state: present
 
+    - name: Удаление дефолтной папки конфига (если она есть и это не ссылка)
+      file:
+        path: "{{ ansible_env.HOME }}/.config/superfile"
+        state: absent
+      when: not (nvim_dir.stat.islnk | default(false))
+
+    - name: Привязываем всю папку конфигов Superfile (Symlink)
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/superfile"
+        dest: "{{ ansible_env.HOME }}/.config/superfile"
+        state: link
+        force: yes
+
     - name: Установка markdownlint-cli2 через NPM
       become: true
       npm:
