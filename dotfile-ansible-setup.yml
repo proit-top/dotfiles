@@ -33,6 +33,7 @@
             build-essential,
             procps,
             file,
+            acl,
           ]
         state: present
         update_cache: yes
