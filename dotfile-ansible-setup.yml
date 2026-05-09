@@ -1,7 +1,9 @@
 ---
+# shell install: ansible-galaxy collection install community.general
+#
+#
 - hosts: localhost
   vars:
-    # Имя твоего пользователя в Windows для путей /mnt/c/
     win_user: "Nick"
 
   tasks:
@@ -27,34 +29,26 @@
             npm,
             bat,
             btop,
+            build-essential,
+            procps,
+            file,
           ]
         state: present
         update_cache: yes
 
-    - name: Установка Lazygit (Прямая загрузка бинарника)
-      block:
-        - name: Скачивание архива Lazygit
-          get_url:
-            url: "https://github.com/jesseduffield/lazygit/releases/download/v0.42.0/lazygit_0.42.0_Linux_x86_64.tar.gz"
-            dest: "/tmp/lazygit.tar.gz"
+    - name: Проверка наличия Homebrew
+      stat:
+        path: "/home/linuxbrew/.linuxbrew/bin/brew"
+      register: brew_check
 
-        - name: Распаковка архива
-          unarchive:
-            src: "/tmp/lazygit.tar.gz"
-            dest: "/tmp"
-            remote_src: yes
+    - name: Установка Homebrew (если отсутствует)
+      shell: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      when: not brew_check.stat.exists
 
-        - name: Копирование бинарника в систему
-          become: true
-          copy:
-            src: "/tmp/lazygit"
-            dest: /usr/local/bin/lazygit
-            mode: "0755"
-
-        - name: Очистка временных файлов
-          file:
-            path: "/tmp/lazygit.tar.gz"
-            state: absent
+    - name: Установка Superfile через Homebrew
+      community.general.homebrew:
+        name: superfile
+        state: present
 
     - name: Установка markdownlint-cli2 через NPM
       become: true
@@ -81,12 +75,17 @@
         mode: "0755"
       become: true
 
-    - name: Клонирование LazyVim Starter
+    - name: Проверка наличия конфига Neovim
+      stat:
+        path: "{{ ansible_env.HOME }}/dotfiles/nvim"
+      register: nvim_dir
+
+    - name: Клонирование LazyVim Starter (только если папки нет)
       git:
         repo: "https://github.com/LazyVim/starter"
         dest: "{{ ansible_env.HOME }}/dotfiles/nvim"
         depth: 1
-        update: no
+      when: not nvim_dir.stat.exists
 
     - name: Привязываем конфиг Neovim (Symlink)
       file:
@@ -108,7 +107,6 @@
 
     - name: Автоматическая установка плагинов Tmux
       shell: "~/.tmux/plugins/tpm/bin/install_plugins"
-      # Запускаем только если tmux.conf обновился или если плагины еще не установлены
       register: tmux_plugins_install
       changed_when: "'Installing' in tmux_plugins_install.stdout"
 
@@ -159,7 +157,7 @@
             src: "{{ temp_bin.path }}/npiperelay.exe"
             dest: "/mnt/c/Users/{{ win_user }}/bin/npiperelay.exe"
             mode: "0755"
-      # Проверяем наличие файла в новом месте
+
       when: not (query('fileglob', '/mnt/c/Users/' + win_user +
         '/bin/npiperelay.exe'))
 
