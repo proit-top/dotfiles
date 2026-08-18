@@ -1,0 +1,447 @@
+---
+- hosts: all
+  vars:
+    win_user: "Nick"
+
+  tasks:
+    - name: Установка общих пакетов (PC + Server)
+      tags: ["pc", "server"]
+      become: true
+      apt:
+        name:
+          [
+            fish,
+            lnav,
+            tmux,
+            fzf,
+            curl,
+            git,
+            ripgrep,
+            fd-find,
+            unzip,
+            wget,
+            zoxide,
+            sshfs,
+            bat,
+            lsd,
+            build-essential,
+            procps,
+            file,
+            acl,
+            rsync,
+            grc,
+          ]
+        state: present
+        update_cache: yes
+
+
+
+    - name: Установка специфичных пакетов только для PC
+      tags: ["pc"]
+      become: true
+      apt:
+        name: [nodejs, socat, libfuse2, btop]
+        state: present
+
+    - name: Настраиваем безопасную глобальную папку для NPM (без sudo)
+      tags: ["pc"]
+      file:
+        path: "{{ ansible_env.HOME }}/.npm-global"
+        state: directory
+
+    - name: Конфигурируем npm prefix на ~/.npm-global
+      tags: ["pc"]
+      command: npm config set prefix '{{ ansible_env.HOME }}/.npm-global'
+      changed_when: false
+
+    - name: Гарантируем наличие ~/.npm-global/bin в Fish PATH
+      tags: ["pc"]
+      file:
+        path: "{{ ansible_env.HOME }}/.config/fish/conf.d"
+        state: directory
+
+    - name: Добавляем npm-global в Fish PATH
+      tags: ["pc"]
+      copy:
+        dest: "{{ ansible_env.HOME }}/.config/fish/conf.d/npm_global.fish"
+        content: |
+          set -gx PATH $HOME/.npm-global/bin $PATH
+        mode: '0644'
+
+    - name: Установка OpenCode CLI через NPM (Без sudo/become)
+      tags: ["pc"]
+      npm:
+        name: opencode-ai
+        global: yes
+        executable: /usr/bin/npm
+      environment:
+        PATH: "{{ ansible_env.HOME }}/.npm-global/bin:{{ ansible_env.PATH }}"
+
+    - name: Гарантируем наличие папки конфигов OpenCode
+      tags: ["pc"]
+      file:
+        path: "{{ ansible_env.HOME }}/.config/opencode"
+        state: directory
+
+    - name: Гарантируем наличие папки skills в dotfiles
+      tags: ["pc"]
+      file:
+        path: "{{ ansible_env.HOME }}/dotfiles/opencode/skills"
+        state: directory
+
+    - name: Привязываем конфиг OpenCode из dotfiles (Symlink)
+      tags: ["pc"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/opencode/config.json"
+        dest: "{{ ansible_env.HOME }}/.config/opencode/config.json"
+        state: link
+        force: yes
+
+    - name: Привязываем всю папку скиллов OpenCode из dotfiles (Symlink)
+      tags: ["pc"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/opencode/skills"
+        dest: "{{ ansible_env.HOME }}/.config/opencode/skills"
+        state: link
+        force: yes
+
+    - name: Привязываем конфиг WezTerm (Копирование в Windows)
+      tags: ["pc"]
+      copy:
+        src: "{{ ansible_env.HOME }}/dotfiles/wezterm/wezterm.lua"
+        dest: "/mnt/c/Users/{{ win_user }}/.wezterm.lua"
+        force: yes
+
+    - name: Удаление старой версии Kitty (из apt)
+      tags: ["pc"]
+      become: true
+      apt:
+        name: kitty
+        state: absent
+
+    - name: Установка свежей версии Kitty (официальный скрипт)
+      tags: ["pc"]
+      shell: |
+        curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
+      args:
+        creates: "{{ ansible_env.HOME }}/.local/kitty.app"
+
+    - name: Создаем симлинк для запуска Kitty
+      tags: ["pc"]
+      become: true
+      file:
+        src: "{{ ansible_env.HOME }}/.local/kitty.app/bin/kitty"
+        dest: "/usr/local/bin/kitty"
+        state: link
+        force: yes
+
+    - name: Привязываем папку конфигов Kitty (Symlink)
+      tags: ["pc"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/kitty/kitty.conf"
+        dest: "{{ ansible_env.HOME }}/.config/kitty/kitty.conf"
+        state: link
+        force: yes
+
+
+    - name: Синхронизируем dotfiles на сервер
+      tags: ["server"]
+      synchronize:
+        src: "{{ ansible_env.HOME }}/dotfiles/"
+        dest: "{{ ansible_env.HOME }}/dotfiles/"
+        recursive: yes
+        delete: yes # Удалит на сервере файлы, которых нет у вас в локальной папке
+        rsync_opts:
+          - "--exclude=.git" # Исключаем папку .git, чтобы не гонять лишний трафик
+
+    - name: Привязываем серверный конфиг Tmux (Symlink)
+      tags: ["server"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/tmux-server.conf"
+        dest: "{{ ansible_env.HOME }}/.tmux-server.conf"
+        state: link
+        force: yes
+
+    - name: Проверка наличия Homebrew
+      tags: ["pc"]
+      stat:
+        path: "/home/linuxbrew/.linuxbrew/bin/brew"
+      register: brew_check
+
+    - name: Установка Homebrew (если отсутствует)
+      tags: ["pc"]
+      shell: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      when: not brew_check.stat.exists
+
+    - name: Установка Superfile через Homebrew
+      tags: ["pc"]
+      community.general.homebrew:
+        name: superfile
+        state: present
+
+    - name: Удаление дефолтной папки конфига (если она есть и это не ссылка)
+      tags: ["pc"]
+      file:
+        path: "{{ ansible_env.HOME }}/.config/superfile"
+        state: absent
+      when: not (nvim_dir.stat.islnk | default(false))
+
+    - name: Привязываем всю папку конфигов Superfile (Symlink)
+      tags: ["pc"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/superfile"
+        dest: "{{ ansible_env.HOME }}/.config/superfile"
+        state: link
+        force: yes
+
+    - name: Установка markdownlint-cli2 через NPM
+      tags: ["pc"]
+      npm:
+        name: markdownlint-cli2
+        global: yes
+
+    - name: Создаем алиас для fd (чтобы LazyVim его нашел)
+      tags: ["pc"]
+      become: true
+      file:
+        src: /usr/bin/fdfind
+        dest: /usr/local/bin/fd
+        state: link
+
+    - name: Установка Starship (красивый промпт)
+      tags: ["pc"]
+      shell: curl -sS https://starship.rs/install.sh | sh -s -- -y
+      args:
+        creates: /usr/local/bin/starship
+
+    - name: Установка Starship (скачивание бинарника)
+      tags: ["server"]
+      become: true
+      get_url:
+        url: https://github.com/starship/starship/releases/latest/download/starship-x86_64-unknown-linux-gnu.tar.gz
+        dest: /tmp/starship.tar.gz
+        mode: "0644"
+
+    - name: Распаковка Starship
+      tags: ["server"]
+      become: true
+      unarchive:
+        src: /tmp/starship.tar.gz
+        dest: /usr/local/bin/
+        remote_src: yes
+
+    - name: Привязываем конфиг Starship (Symlink)
+      tags: ["pc", "server"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/starship.toml"
+        dest: "{{ ansible_env.HOME }}/.config/starship.toml"
+        state: link
+        force: yes
+
+    - name: Установка Herdr (tmux для AI-агентов)
+      tags: ["pc", "server"]
+      shell: curl -fsSL https://herdr.dev/install.sh | sh
+      args:
+        creates: "{{ ansible_env.HOME }}/.local/bin/herdr"
+
+    - name: Скачивание стабильного Neovim (AppImage)
+      tags: ["pc"]
+      get_url:
+        url: https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.appimage
+        dest: /usr/local/bin/nvim
+        mode: "0755"
+      become: true
+
+    - name: Проверка наличия конфига Neovim
+      tags: ["pc"]
+      stat:
+        path: "{{ ansible_env.HOME }}/dotfiles/nvim"
+      register: nvim_dir
+
+    - name: Клонирование LazyVim Starter (только если папки нет)
+      tags: ["pc"]
+      git:
+        repo: "https://github.com/LazyVim/starter"
+        dest: "{{ ansible_env.HOME }}/dotfiles/nvim"
+        depth: 1
+      when: not nvim_dir.stat.exists
+
+    - name: Привязываем конфиг Neovim (Symlink)
+      tags: ["pc"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/nvim"
+        dest: "{{ ansible_env.HOME }}/.config/nvim"
+        state: link
+        force: yes
+
+    - name: Создаем базовую папку для монтирования
+      tags: ["pc"]
+      file:
+        path: "~/remote_server"
+        state: directory
+
+    - name: Клонирование Tmux Plugin Manager (TPM)
+      tags: ["pc"]
+      git:
+        repo: "https://github.com/tmux-plugins/tpm"
+        dest: "~/.tmux/plugins/tpm"
+        depth: 1
+
+    - name: Автоматическая установка плагинов Tmux
+      tags: ["pc"]
+      shell: "~/.tmux/plugins/tpm/bin/install_plugins"
+      register: tmux_plugins_install
+      changed_when: "'Installing' in tmux_plugins_install.stdout"
+
+    - name: Гарантируем наличие папки ~/.config/fish
+      tags: ["pc", "server"]
+      file:
+        path: "~/.config/fish"
+        state: directory
+
+    - name: Привязываем конфиг Fish (Symlink)
+      tags: ["pc", "server"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/config.fish"
+        dest: "{{ ansible_env.HOME }}/.config/fish/config.fish"
+        state: link
+        force: yes
+
+    - name: Привязываем конфиг Tmux (Symlink)
+      tags: ["pc", "server"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/tmux.conf"
+        dest: "{{ ansible_env.HOME }}/.tmux.conf"
+        state: link
+        force: yes
+
+    - name: Установка OmniRoute через NPM
+      tags: ["pc", "omniroute"]
+      npm:
+        name: omniroute
+        global: yes
+        executable: /usr/bin/npm
+      environment:
+        PATH: "{{ ansible_env.HOME }}/.npm-global/bin:{{ ansible_env.PATH }}"
+
+    - name: Гарантируем наличие папки ~/.omniroute
+      tags: ["pc", "omniroute"]
+      file:
+        path: "{{ ansible_env.HOME }}/.omniroute"
+        state: directory
+
+    - name: Привязываем .env конфиг OmniRoute из dotfiles (Symlink)
+      tags: ["pc", "omniroute"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/omniroute/.env"
+        dest: "{{ ansible_env.HOME }}/.omniroute/.env"
+        state: link
+        force: yes
+
+    - name: Создаем systemd unit для OmniRoute
+      tags: ["pc", "omniroute"]
+      become: true
+      copy:
+        dest: /etc/systemd/system/omniroute.service
+        content: |
+          [Unit]
+          Description=OmniRoute AI Gateway Service
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ ansible_user_id }}
+          WorkingDirectory={{ ansible_env.HOME }}
+          ExecStart={{ ansible_env.HOME }}/.npm-global/bin/omniroute serve --no-open
+          Restart=always
+          RestartSec=3
+          Environment=NODE_ENV=production
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+
+    - name: Включаем и запускаем службу OmniRoute
+      tags: ["pc", "omniroute"]
+      become: true
+      systemd:
+        name: omniroute
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+
+    - name: Скачивание и установка npiperelay в Windows
+      tags: ["pc"]
+      block:
+        - name: Создаем папку для бинарников в Windows
+          file:
+            path: "/mnt/c/Users/{{ win_user }}/bin"
+            state: directory
+
+        - name: Создаем временную папку для скачивания в Linux
+          tempfile:
+            state: directory
+          register: temp_bin
+
+        - name: Скачиваем архив npiperelay
+          get_url:
+            url: https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip
+            dest: "{{ temp_bin.path }}/npiperelay.zip"
+
+        - name: Распаковываем npiperelay
+          unarchive:
+            src: "{{ temp_bin.path }}/npiperelay.zip"
+            dest: "{{ temp_bin.path }}"
+            remote_src: yes
+
+        - name: Копируем npiperelay.exe в пользовательскую папку Windows
+          copy:
+            src: "{{ temp_bin.path }}/npiperelay.exe"
+            dest: "/mnt/c/Users/{{ win_user }}/bin/npiperelay.exe"
+            mode: "0755"
+
+      when: not (query('fileglob', '/mnt/c/Users/' + win_user +
+        '/bin/npiperelay.exe'))
+
+    - name: Гарантируем наличие папки для конфига в Windows
+      tags: ["pc"]
+      file:
+        path: "/mnt/c/Users/{{ win_user }}/AppData/Roaming/alacritty"
+        state: directory
+
+    - name: Копируем конфиг Alacritty (Синхронизация через копирование)
+      tags: ["pc"]
+      copy:
+        src: "~/dotfiles/alacritty.toml"
+        dest: "/mnt/c/Users/{{ win_user }}/AppData/Roaming/alacritty/alacritty.toml"
+        force: yes
+
+    - name: Привязываем ssh_config из dotfiles к системе
+      tags: ["pc"]
+      file:
+        src: "~/dotfiles/ssh_config"
+        dest: "~/.ssh/config"
+        state: link
+        force: yes
+
+    - name: Установка Fisher (менеджер плагинов Fish)
+      tags: ["pc"]
+      shell: |
+        curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
+      args:
+        executable: /usr/bin/fish
+        creates: ~/.config/fish/functions/fisher.fish
+
+    - name: Установка плагинов через Fisher
+      tags: ["pc"]
+      shell: fish -c "fisher install PatrickF1/fzf.fish"
+      args:
+        creates: ~/.config/fish/functions/fzf_configure_bindings.fish
+
+    - name: Делаем Fish оболочкой по умолчанию
+      tags: ["pc", "server"]
+      become: true
+      user:
+        name: "{{ ansible_user_id }}"
+        shell: /usr/bin/fish

@@ -1,0 +1,13 @@
+Include /home/nick/dotfiles/ssh_config_local
+
+#tsl
+
+Host tsl-uz-pbx-01
+	Hostname 100.83.252.26
+	User root
+
+
+
+# GitHub — ключ nick (wsl-nickpc)
+Host github.com
+    IdentityFile ~/.ssh/nick

@@ -1,0 +1,12 @@
+
+.DS_Store
+.env
+*.log
+*.retry
+ssh_config_local
+
+# конфиги opencode с ключами — только локально
+opencode/config-backup*.json
+
+# конфиги opencode с ключами — только локально
+opencode/config-backup*.json
