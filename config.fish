@@ -162,8 +162,11 @@ end
 
 
 
+# Автозапуск tmux (в конце, чтобы функции и ssh-агент определились раньше)
+# Отключить автозапуск (нужно для herdr в чистом терминале): HERDR_NO_TMUX=1
 if status is-interactive
     and not set -q TMUX
+    and not set -q HERDR_NO_TMUX
     tmux new-session -A -s main
 end
 
