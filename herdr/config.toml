@@ -1,0 +1,16 @@
+# herdr configuration — dotfiles (18.08.2026)
+# Полный дефолт: herdr --default-config
+
+# Не показывать онбординг при первом запуске
+onboarding = false
+
+[theme]
+name = "catppuccin"
+
+[terminal]
+# Новая панель наследует cwd источника
+new_cwd = "follow"
+
+[ui]
+# Не перерисовывать экран при возврате фокуса (убирает флеши в терминале)
+redraw_on_focus_gained = false

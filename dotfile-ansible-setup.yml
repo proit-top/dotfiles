@@ -112,37 +112,6 @@
         dest: "/mnt/c/Users/{{ win_user }}/.wezterm.lua"
         force: yes
 
-    - name: Удаление старой версии Kitty (из apt)
-      tags: ["pc"]
-      become: true
-      apt:
-        name: kitty
-        state: absent
-
-    - name: Установка свежей версии Kitty (официальный скрипт)
-      tags: ["pc"]
-      shell: |
-        curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
-      args:
-        creates: "{{ ansible_env.HOME }}/.local/kitty.app"
-
-    - name: Создаем симлинк для запуска Kitty
-      tags: ["pc"]
-      become: true
-      file:
-        src: "{{ ansible_env.HOME }}/.local/kitty.app/bin/kitty"
-        dest: "/usr/local/bin/kitty"
-        state: link
-        force: yes
-
-    - name: Привязываем папку конфигов Kitty (Symlink)
-      tags: ["pc"]
-      file:
-        src: "{{ ansible_env.HOME }}/dotfiles/kitty/kitty.conf"
-        dest: "{{ ansible_env.HOME }}/.config/kitty/kitty.conf"
-        state: link
-        force: yes
-
 
     - name: Синхронизируем dotfiles на сервер
       tags: ["server"]
@@ -179,12 +148,18 @@
         name: superfile
         state: present
 
-    - name: Удаление дефолтной папки конфига (если она есть и это не ссылка)
+    - name: Проверка конфига Superfile
+      tags: ["pc"]
+      stat:
+        path: "{{ ansible_env.HOME }}/.config/superfile"
+      register: superfile_dir
+
+    - name: Удаление дефолтной папки конфига Superfile (если это не симлинк)
       tags: ["pc"]
       file:
         path: "{{ ansible_env.HOME }}/.config/superfile"
         state: absent
-      when: not (nvim_dir.stat.islnk | default(false))
+      when: superfile_dir.stat.exists and not superfile_dir.stat.islnk
 
     - name: Привязываем всю папку конфигов Superfile (Symlink)
       tags: ["pc"]
@@ -243,6 +218,20 @@
       shell: curl -fsSL https://herdr.dev/install.sh | sh
       args:
         creates: "{{ ansible_env.HOME }}/.local/bin/herdr"
+
+    - name: Гарантируем наличие папки конфига Herdr
+      tags: ["pc", "server"]
+      file:
+        path: "{{ ansible_env.HOME }}/.config/herdr"
+        state: directory
+
+    - name: Привязываем конфиг Herdr (Symlink)
+      tags: ["pc", "server"]
+      file:
+        src: "{{ ansible_env.HOME }}/dotfiles/herdr/config.toml"
+        dest: "{{ ansible_env.HOME }}/.config/herdr/config.toml"
+        state: link
+        force: yes
 
     - name: Скачивание стабильного Neovim (AppImage)
       tags: ["pc"]
